@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { context, reddit, redis } from "@devvit/web/server";
+import { reddit, redis } from "@devvit/web/server";
 import { missingMirrors } from "./linkFinder.ts";
 
 const MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
@@ -41,9 +41,26 @@ function isDeletedOrRemoved(body: string | undefined | null): boolean {
   return body === "[deleted]" || body === "[removed]";
 }
 
-function isOwnBot(authorName: string | undefined | null): boolean {
+// Bug 4 fix: context.appName returns the app slug (e.g. "xcancel-linker"),
+// not the bot's Reddit username. Resolve lazily via reddit.getAppUser() and cache.
+let cachedAppUsername: string | null = null;
+async function appUsername(): Promise<string | null> {
+  if (cachedAppUsername !== null) return cachedAppUsername;
+  try {
+    const me = await reddit.getAppUser();
+    // User type exposes `username` (not `name`) per @devvit/reddit/models/User.d.ts
+    cachedAppUsername = me?.username ?? null;
+    return cachedAppUsername;
+  } catch (err) {
+    console.error("[xcancel-linker] could not resolve app user", err);
+    return null;
+  }
+}
+
+async function isOwnBot(authorName: string | undefined | null): Promise<boolean> {
   if (!authorName) return false;
-  return authorName === context.appName;
+  const me = await appUsername();
+  return me !== null && authorName === me;
 }
 
 function tooOld(createdAtMs: number): boolean {
@@ -51,7 +68,7 @@ function tooOld(createdAtMs: number): boolean {
 }
 
 async function handleMirrorReply(args: {
-  thingId: string;
+  thingId: `t1_${string}` | `t3_${string}`;
   scanText: string;
 }): Promise<200 | 500> {
   const { thingId, scanText } = args;
@@ -69,16 +86,18 @@ async function handleMirrorReply(args: {
     );
   }
 
+  // Bug 3 fix: Devvit errors come through gRPC machinery and likely don't carry
+  // a numeric .status field. Flip the default to retry-on-unknown, swallow-on-4xx.
   try {
-    await reddit.submitComment({ id: thingId as `t1_${string}` | `t3_${string}`, text: mirrors.join("\n") });
+    await reddit.submitComment({ id: thingId, text: mirrors.join("\n") });
   } catch (err: unknown) {
     const status = (err as { status?: number })?.status;
-    if (status && status >= 500) {
-      console.error("[xcancel-linker] reddit transient error, will retry", err);
-      return 500;
+    if (typeof status === "number" && status >= 400 && status < 500) {
+      console.error("[xcancel-linker] reddit permanent error, swallowing", err);
+      return 200;
     }
-    console.error("[xcancel-linker] reddit permanent error, swallowing", err);
-    return 200;
+    console.error("[xcancel-linker] reddit transient error, will retry", err);
+    return 500;
   }
 
   try {
@@ -113,12 +132,13 @@ async function handleCommentSubmit(
 
   const { comment, author } = payload;
 
-  if (isOwnBot(author?.name)) return respond(rsp, 200);
+  if (await isOwnBot(author?.name)) return respond(rsp, 200);
   if (isDeletedOrRemoved(comment?.body)) return respond(rsp, 200);
   if (tooOld(toEpochMs(comment.createdAt))) return respond(rsp, 200);
 
+  // Bug 1 fix: CommentV2.id arrives as a bare base36 string; prepend t1_ prefix.
   const status = await handleMirrorReply({
-    thingId: comment.id,
+    thingId: `t1_${comment.id}`,
     scanText: comment.body,
   });
   respond(rsp, status);
@@ -150,7 +170,7 @@ async function handlePostSubmit(
 
   const { post, author } = payload;
 
-  if (isOwnBot(author?.name)) return respond(rsp, 200);
+  if (await isOwnBot(author?.name)) return respond(rsp, 200);
   if (isDeletedOrRemoved(post?.selftext)) return respond(rsp, 200);
   if (tooOld(toEpochMs(post.createdAt))) return respond(rsp, 200);
 
@@ -158,15 +178,18 @@ async function handlePostSubmit(
     .filter((s): s is string => typeof s === "string" && s.length > 0)
     .join("\n");
 
+  // Bug 1 fix: PostV2.id arrives as a bare base36 string; prepend t3_ prefix.
   const status = await handleMirrorReply({
-    thingId: post.id,
+    thingId: `t3_${post.id}`,
     scanText,
   });
   respond(rsp, status);
 }
 
+// Bug 2 fix: CommentV2.createdAt and PostV2.createdAt are Unix seconds (proto
+// convention), not milliseconds. Multiply by 1000 to convert to epoch ms.
 function toEpochMs(v: string | number): number {
-  if (typeof v === "number") return v;
+  if (typeof v === "number") return v * 1000;
   return new Date(v).getTime();
 }
 
@@ -175,11 +198,3 @@ async function readJson<T>(req: IncomingMessage): Promise<T> {
   for await (const chunk of req) chunks.push(chunk as Uint8Array);
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
-
-export {
-  handleMirrorReply,
-  isOwnBot,
-  tooOld,
-  isDeletedOrRemoved,
-  respond,
-};
