@@ -23,7 +23,9 @@ async function onRequest(
   req: IncomingMessage,
   rsp: ServerResponse,
 ): Promise<void> {
-  // Routes are filled in by Tasks 6 (comment-submit) and 7 (post-submit).
+  if (req.method === "POST" && req.url === "/internal/on-comment-submit") {
+    return handleCommentSubmit(req, rsp);
+  }
   respond(rsp, 404);
 }
 
@@ -86,6 +88,48 @@ async function handleMirrorReply(args: {
   }
 
   return 200;
+}
+
+interface OnCommentSubmitPayload {
+  comment: { id: string; body: string; createdAt: string | number };
+  author: { name: string };
+}
+
+async function handleCommentSubmit(
+  req: IncomingMessage,
+  rsp: ServerResponse,
+): Promise<void> {
+  let payload: OnCommentSubmitPayload;
+  try {
+    payload = await readJson<OnCommentSubmitPayload>(req);
+  } catch (err) {
+    console.error("[xcancel-linker] bad comment payload", err);
+    respond(rsp, 200);
+    return;
+  }
+
+  const { comment, author } = payload;
+
+  if (isOwnBot(author?.name)) return respond(rsp, 200);
+  if (isDeletedOrRemoved(comment?.body)) return respond(rsp, 200);
+  if (tooOld(toEpochMs(comment.createdAt))) return respond(rsp, 200);
+
+  const status = await handleMirrorReply({
+    thingId: comment.id,
+    scanText: comment.body,
+  });
+  respond(rsp, status);
+}
+
+function toEpochMs(v: string | number): number {
+  if (typeof v === "number") return v;
+  return new Date(v).getTime();
+}
+
+async function readJson<T>(req: IncomingMessage): Promise<T> {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of req) chunks.push(chunk as Uint8Array);
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
 export {
