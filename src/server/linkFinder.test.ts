@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { extractTwitterUrls } from './linkFinder.ts';
+import { extractTwitterUrls, missingMirrors } from './linkFinder.ts';
 
 describe('extractTwitterUrls', () => {
   test('single x.com link', () => {
@@ -70,5 +70,50 @@ describe('extractTwitterUrls', () => {
   test('does not match unrelated subdomains', () => {
     expect(extractTwitterUrls('https://api.twitter.com/foo')).toEqual([]);
     expect(extractTwitterUrls('https://docs.x.com/foo')).toEqual([]);
+  });
+});
+
+describe('missingMirrors', () => {
+  test('single link → one mirror', () => {
+    expect(missingMirrors('see https://x.com/foo/status/1')).toEqual([
+      'https://xcancel.com/foo/status/1',
+    ]);
+  });
+
+  test('multiple links → multiple mirrors, in order', () => {
+    expect(missingMirrors('a https://x.com/a/1 b https://twitter.com/b/2')).toEqual([
+      'https://xcancel.com/a/1',
+      'https://xcancel.com/b/2',
+    ]);
+  });
+
+  test('duplicates collapsed', () => {
+    expect(missingMirrors('https://x.com/a/1 again https://x.com/a/1')).toEqual([
+      'https://xcancel.com/a/1',
+    ]);
+  });
+
+  test('mirror already present is excluded', () => {
+    const text = 'orig https://x.com/a/1 mirror https://xcancel.com/a/1';
+    expect(missingMirrors(text)).toEqual([]);
+  });
+
+  test('partial-mirror-present case: only the un-mirrored ones returned', () => {
+    const text = [
+      'orig1 https://x.com/a/1',
+      'orig2 https://x.com/b/2',
+      'mirror1 https://xcancel.com/a/1',
+    ].join('\n');
+    expect(missingMirrors(text)).toEqual(['https://xcancel.com/b/2']);
+  });
+
+  test('no twitter links → empty', () => {
+    expect(missingMirrors('hello world')).toEqual([]);
+  });
+
+  test('query string preserved in mirror', () => {
+    expect(missingMirrors('https://x.com/foo/status/1?s=20')).toEqual([
+      'https://xcancel.com/foo/status/1?s=20',
+    ]);
   });
 });

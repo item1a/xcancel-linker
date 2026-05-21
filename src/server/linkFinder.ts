@@ -21,3 +21,16 @@ export function extractTwitterUrls(text: string): TwitterUrl[] {
   }
   return out;
 }
+
+export function missingMirrors(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const { path } of extractTwitterUrls(text)) {
+    const mirror = `https://xcancel.com/${path}`;
+    if (seen.has(mirror)) continue;
+    if (text.includes(mirror)) continue;
+    seen.add(mirror);
+    out.push(mirror);
+  }
+  return out;
+}
