@@ -136,9 +136,16 @@ async function handleCommentSubmit(
   if (isDeletedOrRemoved(comment?.body)) return respond(rsp, 200);
   if (tooOld(toEpochMs(comment.createdAt))) return respond(rsp, 200);
 
-  // Bug 1 fix: CommentV2.id arrives as a bare base36 string; prepend t1_ prefix.
+  // Trigger payload's comment.id arrives already prefixed (e.g. "t1_abc"),
+  // confirmed by smoke test against the live trigger wire format. The .d.ts
+  // type `string` does not encode this. Guard against double-prefixing.
+  const rawId = comment.id;
+  const thingId = rawId.startsWith("t1_")
+    ? (rawId as `t1_${string}`)
+    : (`t1_${rawId}` as const);
+
   const status = await handleMirrorReply({
-    thingId: `t1_${comment.id}`,
+    thingId,
     scanText: comment.body,
   });
   respond(rsp, status);
@@ -178,18 +185,23 @@ async function handlePostSubmit(
     .filter((s): s is string => typeof s === "string" && s.length > 0)
     .join("\n");
 
-  // Bug 1 fix: PostV2.id arrives as a bare base36 string; prepend t3_ prefix.
+  const rawId = post.id;
+  const thingId = rawId.startsWith("t3_")
+    ? (rawId as `t3_${string}`)
+    : (`t3_${rawId}` as const);
+
   const status = await handleMirrorReply({
-    thingId: `t3_${post.id}`,
+    thingId,
     scanText,
   });
   respond(rsp, status);
 }
 
-// Bug 2 fix: CommentV2.createdAt and PostV2.createdAt are Unix seconds (proto
-// convention), not milliseconds. Multiply by 1000 to convert to epoch ms.
+// Trigger payload's createdAt arrives as a number in milliseconds (e.g.
+// 1779343721732 ≈ May 2026), confirmed by smoke test. ISO-string fallback
+// kept defensively in case a future Devvit version serializes it differently.
 function toEpochMs(v: string | number): number {
-  if (typeof v === "number") return v * 1000;
+  if (typeof v === "number") return v;
   return new Date(v).getTime();
 }
 
