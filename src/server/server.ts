@@ -26,6 +26,9 @@ async function onRequest(
   if (req.method === "POST" && req.url === "/internal/on-comment-submit") {
     return handleCommentSubmit(req, rsp);
   }
+  if (req.method === "POST" && req.url === "/internal/on-post-submit") {
+    return handlePostSubmit(req, rsp);
+  }
   respond(rsp, 404);
 }
 
@@ -117,6 +120,47 @@ async function handleCommentSubmit(
   const status = await handleMirrorReply({
     thingId: comment.id,
     scanText: comment.body,
+  });
+  respond(rsp, status);
+}
+
+interface OnPostSubmitPayload {
+  post: {
+    id: string;
+    title: string;
+    url?: string | null;
+    selftext?: string | null;
+    createdAt: string | number;
+  };
+  author: { name: string };
+}
+
+async function handlePostSubmit(
+  req: IncomingMessage,
+  rsp: ServerResponse,
+): Promise<void> {
+  let payload: OnPostSubmitPayload;
+  try {
+    payload = await readJson<OnPostSubmitPayload>(req);
+  } catch (err) {
+    console.error("[xcancel-linker] bad post payload", err);
+    respond(rsp, 200);
+    return;
+  }
+
+  const { post, author } = payload;
+
+  if (isOwnBot(author?.name)) return respond(rsp, 200);
+  if (isDeletedOrRemoved(post?.selftext)) return respond(rsp, 200);
+  if (tooOld(toEpochMs(post.createdAt))) return respond(rsp, 200);
+
+  const scanText = [post.url, post.title, post.selftext]
+    .filter((s): s is string => typeof s === "string" && s.length > 0)
+    .join("\n");
+
+  const status = await handleMirrorReply({
+    thingId: post.id,
+    scanText,
   });
   respond(rsp, status);
 }
