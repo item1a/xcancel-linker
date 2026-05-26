@@ -56,11 +56,8 @@ async function writeCache(tweet: Tweet): Promise<void> {
 }
 
 function pickMedia(items: Array<{ type?: string }> | undefined): Tweet["media"] {
-  const first = items?.[0]?.type;
-  if (first === "photo") return "photo";
-  if (first === "video") return "video";
-  if (first === "gif") return "gif";
-  return "none";
+  const t = items?.[0]?.type;
+  return t === "photo" || t === "video" || t === "gif" ? t : "none";
 }
 
 function parseFxResponse(id: string, body: FxResponse): Tweet | null {
