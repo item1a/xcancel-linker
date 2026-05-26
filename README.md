@@ -1,10 +1,9 @@
-# xcancel-bot
+# xcancel-linker
 
-A Reddit Devvit app (registered as `xcancel-linker` on Reddit) that replies
-to new posts and comments containing `x.com` / `twitter.com` /
-`mobile.twitter.com` links with the equivalent `xcancel.com` mirror URLs,
-so users without an X account (or who prefer not to open X) can read the
-linked content.
+A Reddit Devvit app that replies to new posts and comments containing 
+`x.com` / `twitter.com` / `mobile.twitter.com` links with the equivalent
+`xcancel.com` mirror URLs, so users without an X account (or who prefer 
+not to open X) can read the linked content.
 
 ## What it does
 
