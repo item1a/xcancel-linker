@@ -91,7 +91,9 @@ beforeEach(() => {
   getAppUser.mockResolvedValue({ username: BOT });
   redisSet.mockResolvedValue('OK');
   submitComment.mockResolvedValue(undefined);
-  // Sad-path tests exercise console.error branches; suppress to keep output readable.
+  // Tests emit JSON log lines on info/warn/error; suppress for readable output.
+  vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
 });
 

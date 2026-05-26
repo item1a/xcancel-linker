@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { reddit, redis } from "@devvit/web/server";
 import { missingMirrors } from "./linkFinder.ts";
+import { log, serializeErr } from "./log.ts";
 
 const MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
 const DEDUP_TTL_S = 7 * 24 * 60 * 60; // 7 days
@@ -16,9 +17,7 @@ export async function serverOnRequest(
   try {
     await onRequest(req, rsp);
   } catch (err) {
-    console.error(
-      `[xcancel-linker] server error; ${err instanceof Error ? err.stack : err}`,
-    );
+    log("error", "server_uncaught", { url: req.url, ...serializeErr(err) });
     respond(rsp, 500);
   }
 }
@@ -56,7 +55,7 @@ async function appUsername(): Promise<string | null> {
     cachedAppUsername = me?.username ?? null;
     return cachedAppUsername;
   } catch (err) {
-    console.error("[xcancel-linker] could not resolve app user", err);
+    log("error", "resolve_app_user_failed", serializeErr(err));
     return null;
   }
 }
@@ -89,12 +88,15 @@ async function handleMirrorReply(args: {
       expiration: new Date(Date.now() + DEDUP_TTL_S * 1000),
     });
   } catch (err) {
-    console.error("[xcancel-linker] redis SET NX failed, will retry", err);
+    log("warn", "redis_set_nx_failed", { thing_id: thingId, ...serializeErr(err) });
     return 500;
   }
   // Redis returns nil (→ empty/undefined here) when NX is set and the key
   // already exists. Treat any falsy/empty return as "another worker has it."
-  if (!claimed) return 200;
+  if (!claimed) {
+    log("info", "dedup_hit", { thing_id: thingId });
+    return 200;
+  }
 
   // Bug 3 fix: Devvit errors come through gRPC machinery and likely don't carry
   // a numeric .status field. Flip the default to retry-on-unknown, swallow-on-4xx.
@@ -105,22 +107,20 @@ async function handleMirrorReply(args: {
     if (typeof status === "number" && status >= 400 && status < 500) {
       // Permanent error (e.g. thread locked) — keep the claim so retries don't
       // re-attempt a hopeless request.
-      console.error("[xcancel-linker] reddit permanent error, swallowing", err);
+      log("warn", "reply_dropped_permanent", { thing_id: thingId, ...serializeErr(err) });
       return 200;
     }
     // Transient — release the claim so the Devvit retry can re-acquire and try.
     try {
       await redis.del(dedupKey);
     } catch (delErr) {
-      console.error(
-        "[xcancel-linker] redis.del failed during retry rollback",
-        delErr,
-      );
+      log("error", "redis_del_rollback_failed", { thing_id: thingId, ...serializeErr(delErr) });
     }
-    console.error("[xcancel-linker] reddit transient error, will retry", err);
+    log("warn", "reply_retrying_transient", { thing_id: thingId, ...serializeErr(err) });
     return 500;
   }
 
+  log("info", "reply_posted", { thing_id: thingId, n_mirrors: mirrors.length });
   return 200;
 }
 
@@ -137,7 +137,7 @@ async function handleCommentSubmit(
   try {
     payload = await readJson<OnCommentSubmitPayload>(req);
   } catch (err) {
-    console.error("[xcancel-linker] bad comment payload", err);
+    log("error", "bad_payload", { kind: "comment", ...serializeErr(err) });
     respond(rsp, 200);
     return;
   }
@@ -183,7 +183,7 @@ async function handlePostSubmit(
   try {
     payload = await readJson<OnPostSubmitPayload>(req);
   } catch (err) {
-    console.error("[xcancel-linker] bad post payload", err);
+    log("error", "bad_payload", { kind: "post", ...serializeErr(err) });
     respond(rsp, 200);
     return;
   }
