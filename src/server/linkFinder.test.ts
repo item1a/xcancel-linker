@@ -76,6 +76,17 @@ describe('extractTwitterUrls', () => {
     expect(extractTwitterUrls('https://api.twitter.com/foo')).toEqual([]);
     expect(extractTwitterUrls('https://docs.x.com/foo')).toEqual([]);
   });
+
+  test('strips Reddit markdown backslash escapes', () => {
+    // Reddit stores 'AST_SpaceMobile' as 'AST\_SpaceMobile' in raw selftext
+    // to prevent italicization. The captured path must match the unescaped form.
+    expect(extractTwitterUrls('https://x.com/AST\\_SpaceMobile')).toEqual([
+      { url: 'https://x.com/AST_SpaceMobile', path: 'AST_SpaceMobile' },
+    ]);
+    expect(extractTwitterUrls('https://x.com/AST\\_SpaceMobile/status/123')).toEqual([
+      { url: 'https://x.com/AST_SpaceMobile/status/123', path: 'AST_SpaceMobile/status/123' },
+    ]);
+  });
 });
 
 describe('missingMirrors', () => {
@@ -147,6 +158,26 @@ describe('missingMirrors', () => {
   test('dedupes profile URL appearing with and without trackers', () => {
     const text = 'https://x.com/AST_SpaceMobile?s=46 https://x.com/AST_SpaceMobile';
     expect(missingMirrors(text)).toEqual(['https://xcancel.com/AST_SpaceMobile']);
+  });
+
+  test('dedupes escaped vs unescaped underscore variants', () => {
+    // The exact real-world bug: post.url has the raw form while post.selftext
+    // has the Reddit-markdown-escaped form. Both should collapse to one mirror.
+    const text = 'https://x.com/AST_SpaceMobile\nhttps://x.com/AST\\_SpaceMobile';
+    expect(missingMirrors(text)).toEqual(['https://xcancel.com/AST_SpaceMobile']);
+  });
+
+  test('dedupes the exact failing case: profile + status, escaped + unescaped', () => {
+    const text = [
+      'https://x.com/AST\\_SpaceMobile',
+      'https://x.com/AST_SpaceMobile',
+      'https://x.com/AST\\_SpaceMobile/status/2057846652870840333',
+      'https://x.com/AST_SpaceMobile/status/2057846652870840333',
+    ].join('\n');
+    expect(missingMirrors(text)).toEqual([
+      'https://xcancel.com/AST_SpaceMobile',
+      'https://xcancel.com/AST_SpaceMobile/status/2057846652870840333',
+    ]);
   });
 
   test('case-insensitive mirror-already-present detection', () => {

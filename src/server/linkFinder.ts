@@ -45,7 +45,7 @@ function fixerPathKeys(text: string): Set<string> {
   for (const m of text.matchAll(FIXER_HOST_RE)) {
     const raw = m[1];
     if (!raw) continue;
-    out.add(tweetPathKey(raw.replace(TRAILING_PUNCT, "")));
+    out.add(tweetPathKey(raw.replace(/\\/g, "").replace(TRAILING_PUNCT, "")));
   }
   return out;
 }
@@ -55,7 +55,11 @@ export function extractTwitterUrls(text: string): TwitterUrl[] {
   for (const m of text.matchAll(HOST_RE)) {
     const raw = m[1];
     if (!raw) continue;
-    const url = raw.replace(TRAILING_PUNCT, "");
+    // Strip Reddit markdown escapes: raw selftext stores '_' as '\\_' to
+    // prevent italicization, so 'x.com/AST_SpaceMobile' arrives as
+    // 'x.com/AST\\_SpaceMobile'. Backslashes aren't valid in URL paths
+    // (per RFC), so removing them is safe and yields a clickable mirror.
+    const url = raw.replace(/\\/g, "").replace(TRAILING_PUNCT, "");
     const slash = url.indexOf("/", url.indexOf("://") + 3);
     const path = slash >= 0 ? url.slice(slash + 1) : "";
     if (path.length === 0) continue;
