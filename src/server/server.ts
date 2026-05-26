@@ -1,9 +1,25 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { reddit, redis } from "@devvit/web/server";
+import { reddit, redis, settings } from "@devvit/web/server";
 import { findMirrors, type MirrorMatch } from "./linkFinder.ts";
 import { fetchTweet } from "./fxtwitter.ts";
 import { renderReply, type ReplyItem } from "./render.ts";
 import { log, serializeErr } from "./log.ts";
+
+const ENRICH_SETTING = "enrichTweetPreviews";
+
+// Read the per-sub enrichment toggle from Devvit settings. Fail open: if the
+// settings plugin errors, default to enrichment ON (matching defaultValue in
+// devvit.json) so a transient settings glitch doesn't degrade replies for
+// subs that wanted previews.
+async function isEnrichmentEnabled(): Promise<boolean> {
+  try {
+    const v = await settings.get<boolean>(ENRICH_SETTING);
+    return v !== false;
+  } catch (err) {
+    log("warn", "settings_read_failed", { setting: ENRICH_SETTING, ...serializeErr(err) });
+    return true;
+  }
+}
 
 const MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
 const DEDUP_TTL_S = 7 * 24 * 60 * 60; // 7 days
@@ -60,8 +76,9 @@ async function handleMirrorReply(args: {
   replyText: string;
   enriched: number;
   total: number;
+  enrichmentEnabled: boolean;
 }): Promise<200 | 500> {
-  const { thingId, replyText, enriched, total } = args;
+  const { thingId, replyText, enriched, total, enrichmentEnabled } = args;
   const dedupKey = `replied:${thingId}`;
 
   // Atomically claim the dedup slot BEFORE replying. Read-then-write let two
@@ -99,7 +116,12 @@ async function handleMirrorReply(args: {
     return 500;
   }
 
-  log("info", "reply_posted", { thing_id: thingId, n_mirrors: total, n_enriched: enriched });
+  log("info", "reply_posted", {
+    thing_id: thingId,
+    n_mirrors: total,
+    n_enriched: enriched,
+    enrichment_enabled: enrichmentEnabled,
+  });
   return 200;
 }
 
@@ -151,7 +173,10 @@ async function handleSubmitTrigger(
     });
   }
 
-  const items = await buildReplyItems(matches);
+  const enrichmentEnabled = await isEnrichmentEnabled();
+  const items = enrichmentEnabled
+    ? await buildReplyItems(matches)
+    : matches.map(({ mirrorUrl }) => ({ mirrorUrl, tweet: null }));
   const replyText = renderReply(items);
   const enriched = items.filter((it) => it.tweet !== null).length;
 
@@ -167,6 +192,7 @@ async function handleSubmitTrigger(
     replyText,
     enriched,
     total: items.length,
+    enrichmentEnabled,
   });
   respond(rsp, status);
 }

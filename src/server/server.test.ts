@@ -5,6 +5,7 @@ const submitComment = vi.fn();
 const redisGet = vi.fn();
 const redisSet = vi.fn();
 const redisDel = vi.fn();
+const settingsGet = vi.fn();
 
 vi.mock('@devvit/web/server', () => ({
   reddit: {
@@ -14,6 +15,9 @@ vi.mock('@devvit/web/server', () => ({
     get: (...a: unknown[]) => redisGet(...a),
     set: (...a: unknown[]) => redisSet(...a),
     del: (...a: unknown[]) => redisDel(...a),
+  },
+  settings: {
+    get: (...a: unknown[]) => settingsGet(...a),
   },
 }));
 
@@ -87,9 +91,12 @@ beforeEach(() => {
   redisGet.mockReset();
   redisSet.mockReset();
   redisDel.mockReset();
+  settingsGet.mockReset();
   redisGet.mockResolvedValue(undefined);
   redisSet.mockResolvedValue('OK');
   submitComment.mockResolvedValue(undefined);
+  // Default: enrichment setting unset → fall back to defaultValue (true).
+  settingsGet.mockResolvedValue(undefined);
   // Default: tweet enrichment fetches fail, so replies render as mirror-only.
   // Tests that care about enrichment override this stub.
   globalThis.fetch = vi.fn(async () => {
@@ -284,6 +291,36 @@ describe('tweet enrichment', () => {
     const text = submitComment.mock.calls[0]?.[0]?.text as string;
     expect(text).toContain('cached');
     expect(text).toContain('from cache');
+  });
+
+  test('enrichment disabled via setting: no fetch, mirror-only reply', async () => {
+    settingsGet.mockResolvedValueOnce(false);
+    const fetchStub = vi.fn(async () =>
+      new Response(JSON.stringify({
+        code: 200,
+        status: { type: 'status', text: 'should not appear', author: { screen_name: 'x' } },
+      }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+    globalThis.fetch = fetchStub as unknown as typeof fetch;
+
+    await postComment(freshComment());
+    expect(fetchStub).not.toHaveBeenCalled();
+    const text = submitComment.mock.calls[0]?.[0]?.text as string;
+    expect(text).toBe('https://xcancel.com/foo/status/1');
+  });
+
+  test('settings read failure: defaults to enrichment on', async () => {
+    settingsGet.mockRejectedValueOnce(new Error('settings plugin down'));
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({
+        code: 200,
+        status: { type: 'status', text: 'hi', author: { screen_name: 'a' } },
+      }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    ) as unknown as typeof fetch;
+
+    await postComment(freshComment());
+    const text = submitComment.mock.calls[0]?.[0]?.text as string;
+    expect(text).toBe('**@a**: hi\nhttps://xcancel.com/foo/status/1');
   });
 
   test('sensitive tweet: text suppressed', async () => {

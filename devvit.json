@@ -23,5 +23,15 @@
   },
   "dev": {
     "subreddit": "xcancel_linker_dev"
+  },
+  "settings": {
+    "subreddit": {
+      "enrichTweetPreviews": {
+        "type": "boolean",
+        "label": "Include tweet previews in replies",
+        "helpText": "When on, replies include the tweet author and a short preview of the tweet text alongside the xcancel mirror. Turn off to get bare mirror URLs only.",
+        "defaultValue": true
+      }
+    }
   }
 }

@@ -29,6 +29,14 @@ the mirror URL.
 No configuration required. The app needs `reddit` and `redis`
 permissions, both shown at install time.
 
+## Settings
+
+One per-subreddit toggle is available in the install settings:
+
+- **Include tweet previews in replies** (default: on) — Turn off if
+  you'd rather the bot post bare `xcancel.com` mirror URLs without
+  the author and tweet-text preview.
+
 ## What gets stored
 
 Two Redis key shapes, both scoped to the installation:
