@@ -162,6 +162,7 @@ async function handleCommentSubmit(
     body_len: comment.body.length,
     raw_matches: rawMatches,
     deduped_mirrors: mirrors.length,
+    mirrors,
   });
 
   const items = await buildReplyItems(mirrors);
@@ -229,6 +230,10 @@ async function handlePostSubmit(
     scan_len: scanText.length,
     raw_matches: rawMatches,
     deduped_mirrors: mirrors.length,
+    // Log mirror strings so we can see when "deduped" mirrors are actually
+    // distinct strings (e.g. trailing path segments, tracker variance the
+    // current normalizer missed). Public x.com paths only — no user content.
+    mirrors,
   });
 
   const items = await buildReplyItems(mirrors);
