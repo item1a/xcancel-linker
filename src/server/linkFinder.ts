@@ -23,14 +23,21 @@ const FIXER_HOST_RE =
 
 const TRAILING_PUNCT = /[.,!?;:)\]>]+$/;
 
-function tweetPathKey(p: string): string {
-  let s = p.toLowerCase();
+// Strip query string, fragment, and trailing slash from a path. X's tracking
+// params (s, t, ref_src, …) don't affect tweet identity, so two URLs that
+// differ only in trackers should produce the same mirror.
+function normalizePath(p: string): string {
+  let s = p;
   const q = s.indexOf("?");
   if (q >= 0) s = s.slice(0, q);
   const h = s.indexOf("#");
   if (h >= 0) s = s.slice(0, h);
   if (s.endsWith("/")) s = s.slice(0, -1);
   return s;
+}
+
+function tweetPathKey(p: string): string {
+  return normalizePath(p).toLowerCase();
 }
 
 function fixerPathKeys(text: string): Set<string> {
@@ -65,7 +72,9 @@ export function missingMirrors(text: string): string[] {
   const haystack = text.toLowerCase();
   const fixers = fixerPathKeys(text);
   for (const { path } of extractTwitterUrls(text)) {
-    const mirror = `https://xcancel.com/${path}`;
+    const cleanPath = normalizePath(path);
+    if (cleanPath.length === 0) continue;
+    const mirror = `https://xcancel.com/${cleanPath}`;
     const mirrorLc = mirror.toLowerCase();
     if (seen.has(mirrorLc)) continue;
     if (haystack.includes(mirrorLc)) continue;

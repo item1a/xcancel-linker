@@ -116,10 +116,37 @@ describe('missingMirrors', () => {
     expect(missingMirrors('hello world')).toEqual([]);
   });
 
-  test('query string preserved in mirror', () => {
+  test('strips X tracking query string from mirror', () => {
     expect(missingMirrors('https://x.com/foo/status/1?s=20')).toEqual([
-      'https://xcancel.com/foo/status/1?s=20',
+      'https://xcancel.com/foo/status/1',
     ]);
+  });
+
+  test('strips fragment from mirror', () => {
+    expect(missingMirrors('https://x.com/foo/status/1#anchor')).toEqual([
+      'https://xcancel.com/foo/status/1',
+    ]);
+  });
+
+  test('strips trailing slash from mirror', () => {
+    expect(missingMirrors('https://x.com/foo/status/1/')).toEqual([
+      'https://xcancel.com/foo/status/1',
+    ]);
+  });
+
+  test('dedupes URLs differing only in tracking params', () => {
+    const text = 'https://x.com/foo/status/1?s=20&t=abc https://x.com/foo/status/1?s=46';
+    expect(missingMirrors(text)).toEqual(['https://xcancel.com/foo/status/1']);
+  });
+
+  test('dedupes URLs differing only in trailing slash', () => {
+    const text = 'https://x.com/foo/status/1 https://x.com/foo/status/1/';
+    expect(missingMirrors(text)).toEqual(['https://xcancel.com/foo/status/1']);
+  });
+
+  test('dedupes profile URL appearing with and without trackers', () => {
+    const text = 'https://x.com/AST_SpaceMobile?s=46 https://x.com/AST_SpaceMobile';
+    expect(missingMirrors(text)).toEqual(['https://xcancel.com/AST_SpaceMobile']);
   });
 
   test('case-insensitive mirror-already-present detection', () => {
