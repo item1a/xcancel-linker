@@ -68,14 +68,26 @@ export function extractTwitterUrls(text: string): TwitterUrl[] {
   return out;
 }
 
-export function missingMirrors(text: string): string[] {
+export interface MirrorMatch {
+  mirrorUrl: string;
+  tweetId: string | null;
+}
+
+export interface FindMirrorsResult {
+  items: MirrorMatch[];
+  /** How many twitter URLs the regex matched before dedup. */
+  rawCount: number;
+}
+
+export function findMirrors(text: string): FindMirrorsResult {
   const seen = new Set<string>();
-  const out: string[] = [];
+  const items: MirrorMatch[] = [];
   // Case-insensitive haystack so "HTTPS://Xcancel.com/..." counts as present.
   // Trailing slashes are handled naturally: `includes("…/1")` matches "…/1/".
   const haystack = text.toLowerCase();
   const fixers = fixerPathKeys(text);
-  for (const { path } of extractTwitterUrls(text)) {
+  const raw = extractTwitterUrls(text);
+  for (const { path } of raw) {
     const cleanPath = normalizePath(path);
     if (cleanPath.length === 0) continue;
     const mirror = `https://xcancel.com/${cleanPath}`;
@@ -84,7 +96,12 @@ export function missingMirrors(text: string): string[] {
     if (haystack.includes(mirrorLc)) continue;
     if (fixers.has(tweetPathKey(path))) continue;
     seen.add(mirrorLc);
-    out.push(mirror);
+    items.push({ mirrorUrl: mirror, tweetId: tweetId(cleanPath) });
   }
-  return out;
+  return { items, rawCount: raw.length };
+}
+
+// Thin adapter — tests assert on the mirror-URL list directly.
+export function missingMirrors(text: string): string[] {
+  return findMirrors(text).items.map((m) => m.mirrorUrl);
 }

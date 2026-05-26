@@ -1,24 +1,18 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { reddit, redis } from "@devvit/web/server";
-import { extractTwitterUrls, missingMirrors, tweetId } from "./linkFinder.ts";
+import { findMirrors, type MirrorMatch } from "./linkFinder.ts";
 import { fetchTweet } from "./fxtwitter.ts";
 import { renderReply, type ReplyItem } from "./render.ts";
 import { log, serializeErr } from "./log.ts";
 
-const XCANCEL_PREFIX = "https://xcancel.com/";
-
 // Fetch tweet metadata for each mirror in parallel; fail-open per item so a
 // single fetch error doesn't degrade the rest of the reply.
-async function buildReplyItems(mirrorUrls: string[]): Promise<ReplyItem[]> {
+async function buildReplyItems(matches: MirrorMatch[]): Promise<ReplyItem[]> {
   return Promise.all(
-    mirrorUrls.map(async (mirrorUrl) => {
-      const path = mirrorUrl.startsWith(XCANCEL_PREFIX)
-        ? mirrorUrl.slice(XCANCEL_PREFIX.length)
-        : "";
-      const id = tweetId(path);
-      if (!id) return { mirrorUrl, tweet: null };
-      return { mirrorUrl, tweet: await fetchTweet(id) };
-    }),
+    matches.map(async ({ mirrorUrl, tweetId }) => ({
+      mirrorUrl,
+      tweet: tweetId ? await fetchTweet(tweetId) : null,
+    })),
   );
 }
 
@@ -153,21 +147,21 @@ async function handleCommentSubmit(
   if (isDeletedOrRemoved(comment?.body)) return respond(rsp, 200);
   if (tooOld(toEpochMs(comment.createdAt))) return respond(rsp, 200);
 
-  const rawMatches = extractTwitterUrls(comment.body).length;
-  const mirrors = missingMirrors(comment.body).slice(0, MAX_MIRRORS_PER_REPLY);
-  if (mirrors.length === 0) return respond(rsp, 200);
+  const { items: allMatches, rawCount } = findMirrors(comment.body);
+  const matches = allMatches.slice(0, MAX_MIRRORS_PER_REPLY);
+  if (matches.length === 0) return respond(rsp, 200);
 
-  if (rawMatches !== mirrors.length) {
-    // Healthy: rawMatches > mirrors when dedup collapsed duplicates.
-    // Surfaces silently if dedup ever regresses (rawMatches == mirrors == N>2).
+  if (rawCount !== matches.length) {
+    // Healthy: rawCount > matches when dedup collapsed duplicates.
+    // Surfaces silently if dedup ever regresses (rawCount == matches == N>2).
     log("info", "extraction_stats", {
       thing_id: comment.id,
-      raw_matches: rawMatches,
-      deduped_mirrors: mirrors.length,
+      raw_matches: rawCount,
+      deduped_mirrors: matches.length,
     });
   }
 
-  const items = await buildReplyItems(mirrors);
+  const items = await buildReplyItems(matches);
   const replyText = renderReply(items);
   const enriched = items.filter((it) => it.tweet !== null).length;
 
@@ -220,19 +214,19 @@ async function handlePostSubmit(
     .filter((s): s is string => typeof s === "string" && s.length > 0)
     .join("\n");
 
-  const rawMatches = extractTwitterUrls(scanText).length;
-  const mirrors = missingMirrors(scanText).slice(0, MAX_MIRRORS_PER_REPLY);
-  if (mirrors.length === 0) return respond(rsp, 200);
+  const { items: allMatches, rawCount } = findMirrors(scanText);
+  const matches = allMatches.slice(0, MAX_MIRRORS_PER_REPLY);
+  if (matches.length === 0) return respond(rsp, 200);
 
-  if (rawMatches !== mirrors.length) {
+  if (rawCount !== matches.length) {
     log("info", "extraction_stats", {
       thing_id: post.id,
-      raw_matches: rawMatches,
-      deduped_mirrors: mirrors.length,
+      raw_matches: rawCount,
+      deduped_mirrors: matches.length,
     });
   }
 
-  const items = await buildReplyItems(mirrors);
+  const items = await buildReplyItems(matches);
   const replyText = renderReply(items);
   const enriched = items.filter((it) => it.tweet !== null).length;
 
