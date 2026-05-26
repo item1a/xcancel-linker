@@ -14,6 +14,14 @@ posts a reply containing the equivalent `xcancel.com/<path>` mirror.
 URLs that already have their xcancel mirror present in the same
 post/comment are skipped, so no spammy duplicate mirrors.
 
+The reply also includes a brief preview of each tweet — author handle,
+tweet text, and a tag for any attached media (`[photo]` / `[video]` /
+`[gif]`) — so readers can decide whether to click without leaving
+Reddit. Tweet metadata is fetched on demand from `api.fxtwitter.com`
+and cached for 24 hours. Sensitive tweets are linked without their
+text. If the fetch fails for any reason, the reply falls back to just
+the mirror URL.
+
 ## Install
 
 1. Visit the app's page in the Reddit App Directory.
@@ -24,9 +32,15 @@ permissions, both shown at install time.
 
 ## What gets stored
 
-A single Redis key per replied-to thing: `replied:<comment-or-post-id>`
-with a 7-day TTL. No user content, no analytics, no external network
-calls. See [PRIVACY.md](PRIVACY.md).
+Two Redis key shapes, both scoped to the installation:
+
+- `replied:<comment-or-post-id>` — 7-day TTL, prevents duplicate replies.
+- `tweet:<tweet-id>` — 24-hour TTL, caches the public tweet metadata
+  shown in the reply preview.
+
+No user content, no analytics. The only outbound network call is to
+`api.fxtwitter.com` to fetch public tweet metadata. See
+[PRIVACY.md](PRIVACY.md).
 
 ## Terms / Privacy
 
