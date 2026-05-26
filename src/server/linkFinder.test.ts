@@ -55,6 +55,11 @@ describe('extractTwitterUrls', () => {
     expect(extractTwitterUrls('[https://x.com/foo/status/1]')).toEqual([
       { url: 'https://x.com/foo/status/1', path: 'foo/status/1' },
     ]);
+    for (const punct of ['!', '?', ';', ':']) {
+      expect(extractTwitterUrls(`wow https://x.com/foo/status/1${punct}`)).toEqual([
+        { url: 'https://x.com/foo/status/1', path: 'foo/status/1' },
+      ]);
+    }
   });
 
   test('markdown link syntax', () => {

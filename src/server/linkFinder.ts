@@ -11,7 +11,7 @@ const HOST_RE =
 const FIXER_HOST_RE =
   /https?:\/\/(?:fxtwitter\.com|vxtwitter\.com|fixupx\.com|fixvx\.com)\/([^\s)\]]+)/gi;
 
-const TRAILING_PUNCT = /[.,)\]>]+$/;
+const TRAILING_PUNCT = /[.,!?;:)\]>]+$/;
 
 function tweetPathKey(p: string): string {
   let s = p.toLowerCase();
