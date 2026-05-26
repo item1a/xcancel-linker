@@ -69,12 +69,9 @@ function tooOld(createdAtMs: number): boolean {
 
 async function handleMirrorReply(args: {
   thingId: `t1_${string}` | `t3_${string}`;
-  scanText: string;
+  mirrors: string[];
 }): Promise<200 | 500> {
-  const { thingId, scanText } = args;
-
-  const mirrors = missingMirrors(scanText);
-  if (mirrors.length === 0) return 200;
+  const { thingId, mirrors } = args;
 
   const dedupKey = `replied:${thingId}`;
   try {
@@ -132,9 +129,13 @@ async function handleCommentSubmit(
 
   const { comment, author } = payload;
 
-  if (await isOwnBot(author?.name)) return respond(rsp, 200);
   if (isDeletedOrRemoved(comment?.body)) return respond(rsp, 200);
   if (tooOld(toEpochMs(comment.createdAt))) return respond(rsp, 200);
+
+  const mirrors = missingMirrors(comment.body);
+  if (mirrors.length === 0) return respond(rsp, 200);
+
+  if (await isOwnBot(author?.name)) return respond(rsp, 200);
 
   // Trigger payload's comment.id arrives already prefixed (e.g. "t1_abc"),
   // confirmed by smoke test against the live trigger wire format. The .d.ts
@@ -144,10 +145,7 @@ async function handleCommentSubmit(
     ? (rawId as `t1_${string}`)
     : (`t1_${rawId}` as const);
 
-  const status = await handleMirrorReply({
-    thingId,
-    scanText: comment.body,
-  });
+  const status = await handleMirrorReply({ thingId, mirrors });
   respond(rsp, status);
 }
 
@@ -177,7 +175,6 @@ async function handlePostSubmit(
 
   const { post, author } = payload;
 
-  if (await isOwnBot(author?.name)) return respond(rsp, 200);
   if (isDeletedOrRemoved(post?.selftext)) return respond(rsp, 200);
   if (tooOld(toEpochMs(post.createdAt))) return respond(rsp, 200);
 
@@ -185,15 +182,17 @@ async function handlePostSubmit(
     .filter((s): s is string => typeof s === "string" && s.length > 0)
     .join("\n");
 
+  const mirrors = missingMirrors(scanText);
+  if (mirrors.length === 0) return respond(rsp, 200);
+
+  if (await isOwnBot(author?.name)) return respond(rsp, 200);
+
   const rawId = post.id;
   const thingId = rawId.startsWith("t3_")
     ? (rawId as `t3_${string}`)
     : (`t3_${rawId}` as const);
 
-  const status = await handleMirrorReply({
-    thingId,
-    scanText,
-  });
+  const status = await handleMirrorReply({ thingId, mirrors });
   respond(rsp, status);
 }
 
