@@ -186,21 +186,18 @@ describe('handleMirrorReply (via comment handler)', () => {
     expect(submitComment).not.toHaveBeenCalled();
   });
 
-  test('reddit 4xx (permanent) → 200, claim retained (no del)', async () => {
-    submitComment.mockRejectedValueOnce(Object.assign(new Error('locked'), { status: 403 }));
-    const rsp = await postComment(freshComment());
-    expect(rsp.status).toBe(200);
-    expect(redisDel).not.toHaveBeenCalled();
-  });
-
-  test('reddit transient (no status) → 500, claim released via del', async () => {
-    submitComment.mockRejectedValueOnce(new Error('network blip'));
+  test('reddit error (generic) → 500, claim released via del', async () => {
+    // Matches the actual shape of @devvit/reddit's submit-comment failure:
+    // generic Error with no .status or .code.
+    submitComment.mockRejectedValueOnce(new Error('failed to reply to comment'));
     const rsp = await postComment(freshComment());
     expect(rsp.status).toBe(500);
     expect(redisDel).toHaveBeenCalledWith('replied:t1_abc');
   });
 
-  test('reddit transient (5xx status) → 500, claim released', async () => {
+  test('reddit error with status field still treated as transient', async () => {
+    // Defensive: if a future Devvit version starts attaching a status, we
+    // shouldn't suddenly start swallowing replies as "permanent."
     submitComment.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 503 }));
     const rsp = await postComment(freshComment());
     expect(rsp.status).toBe(500);

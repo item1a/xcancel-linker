@@ -98,19 +98,17 @@ async function handleMirrorReply(args: {
     return 200;
   }
 
-  // Bug 3 fix: Devvit errors come through gRPC machinery and likely don't carry
-  // a numeric .status field. Flip the default to retry-on-unknown, swallow-on-4xx.
+  // @devvit/reddit's Comment.submit collapses ALL Reddit application-level
+  // errors (RATELIMIT, DELETED_COMMENT, TOO_OLD, SUBREDDIT_NOTALLOWED, …) into
+  // a single Error('failed to reply to comment') with no .status or .code, so
+  // we can't distinguish permanent from transient from this side. Treat every
+  // failure as transient: in every case where Reddit fills its errors array
+  // the comment was NOT posted, so retrying can't create a duplicate via this
+  // path. The 1-hour tooOld filter bounds wasted retries on truly permanent
+  // failures (locked thread, banned sub).
   try {
     await reddit.submitComment({ id: thingId, text: mirrors.join("\n") });
-  } catch (err: unknown) {
-    const status = (err as { status?: number })?.status;
-    if (typeof status === "number" && status >= 400 && status < 500) {
-      // Permanent error (e.g. thread locked) — keep the claim so retries don't
-      // re-attempt a hopeless request.
-      log("warn", "reply_dropped_permanent", { thing_id: thingId, ...serializeErr(err) });
-      return 200;
-    }
-    // Transient — release the claim so the Devvit retry can re-acquire and try.
+  } catch (err) {
     try {
       await redis.del(dedupKey);
     } catch (delErr) {
