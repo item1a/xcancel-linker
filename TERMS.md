@@ -1,6 +1,6 @@
-# xcancel-bot — Terms of Service
+# xcancel-linker — Terms of Service
 
-By installing or using xcancel-bot ("the App") on a subreddit, you
+By installing or using xcancel-linker ("the App") on a subreddit, you
 agree to these terms.
 
 1. The App is provided as-is, with no warranty. It may stop working,

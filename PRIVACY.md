@@ -1,6 +1,6 @@
-# xcancel-bot — Privacy Policy
+# xcancel-linker — Privacy Policy
 
-xcancel-bot ("the App") is designed to store the minimum data needed
+xcancel-linker ("the App") is designed to store the minimum data needed
 to do its job.
 
 ## What we store
