@@ -132,4 +132,30 @@ describe('missingMirrors', () => {
       'https://xcancel.com/Foo/status/1',
     ]);
   });
+
+  test('fxtwitter mirror to same tweet suppresses our mirror', () => {
+    const text = 'orig https://x.com/foo/status/1 fxd https://fxtwitter.com/foo/status/1';
+    expect(missingMirrors(text)).toEqual([]);
+  });
+
+  test('vxtwitter / fixupx / fixvx are also recognized', () => {
+    for (const host of ['vxtwitter.com', 'fixupx.com', 'fixvx.com']) {
+      expect(missingMirrors(`https://x.com/foo/status/1 https://${host}/foo/status/1`)).toEqual([]);
+    }
+  });
+
+  test('fixer with different query string still counts as same tweet', () => {
+    const text = 'https://x.com/foo/status/1?s=20 https://fxtwitter.com/foo/status/1';
+    expect(missingMirrors(text)).toEqual([]);
+  });
+
+  test('fixer with trailing slash still counts as same tweet', () => {
+    const text = 'https://x.com/foo/status/1 https://fxtwitter.com/foo/status/1/';
+    expect(missingMirrors(text)).toEqual([]);
+  });
+
+  test('fixer for a different tweet does not suppress', () => {
+    const text = 'https://x.com/foo/status/1 https://fxtwitter.com/bar/status/2';
+    expect(missingMirrors(text)).toEqual(['https://xcancel.com/foo/status/1']);
+  });
 });
