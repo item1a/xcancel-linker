@@ -74,14 +74,23 @@ async function handleMirrorReply(args: {
   const { thingId, mirrors } = args;
 
   const dedupKey = `replied:${thingId}`;
+
+  // Atomically claim the dedup slot BEFORE replying. Read-then-write let two
+  // concurrent triggers (or retries) both pass the check and post duplicates;
+  // SET NX collapses that to a single winner.
+  let claimed: string | null | undefined;
   try {
-    if (await redis.get(dedupKey)) return 200;
+    claimed = await redis.set(dedupKey, "1", {
+      nx: true,
+      expiration: new Date(Date.now() + DEDUP_TTL_S * 1000),
+    });
   } catch (err) {
-    console.error(
-      "[xcancel-linker] redis.get failed, treating as cache miss",
-      err,
-    );
+    console.error("[xcancel-linker] redis SET NX failed, will retry", err);
+    return 500;
   }
+  // Redis returns nil (→ empty/undefined here) when NX is set and the key
+  // already exists. Treat any falsy/empty return as "another worker has it."
+  if (!claimed) return 200;
 
   // Bug 3 fix: Devvit errors come through gRPC machinery and likely don't carry
   // a numeric .status field. Flip the default to retry-on-unknown, swallow-on-4xx.
@@ -90,20 +99,22 @@ async function handleMirrorReply(args: {
   } catch (err: unknown) {
     const status = (err as { status?: number })?.status;
     if (typeof status === "number" && status >= 400 && status < 500) {
+      // Permanent error (e.g. thread locked) — keep the claim so retries don't
+      // re-attempt a hopeless request.
       console.error("[xcancel-linker] reddit permanent error, swallowing", err);
       return 200;
     }
+    // Transient — release the claim so the Devvit retry can re-acquire and try.
+    try {
+      await redis.del(dedupKey);
+    } catch (delErr) {
+      console.error(
+        "[xcancel-linker] redis.del failed during retry rollback",
+        delErr,
+      );
+    }
     console.error("[xcancel-linker] reddit transient error, will retry", err);
     return 500;
-  }
-
-  try {
-    await redis.set(dedupKey, "1", { expiration: new Date(Date.now() + DEDUP_TTL_S * 1000) });
-  } catch (err) {
-    console.error(
-      "[xcancel-linker] redis.set failed after successful reply",
-      err,
-    );
   }
 
   return 200;
