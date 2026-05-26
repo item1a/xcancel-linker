@@ -3,6 +3,12 @@ import { reddit, redis } from "@devvit/web/server";
 import { missingMirrors } from "./linkFinder.ts";
 import { log, serializeErr } from "./log.ts";
 
+// Self-recursion note: we intentionally don't check author == app bot. Our
+// reply contains only xcancel.com URLs (HOST_RE doesn't match those), so
+// missingMirrors() returns [] for our own replies and we bail before any
+// reddit call. The mirror-already-present check provides a second structural
+// guard if the reply format ever grows to include the original x.com URL too.
+
 const MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
 const DEDUP_TTL_S = 7 * 24 * 60 * 60; // 7 days
 // Cap the per-reply mirror count so a link-heavy post can't make us produce a
@@ -42,28 +48,6 @@ function respond(rsp: ServerResponse, status: number): void {
 
 function isDeletedOrRemoved(body: string | undefined | null): boolean {
   return body === "[deleted]" || body === "[removed]";
-}
-
-// Bug 4 fix: context.appName returns the app slug (e.g. "xcancel-linker"),
-// not the bot's Reddit username. Resolve lazily via reddit.getAppUser() and cache.
-let cachedAppUsername: string | null = null;
-async function appUsername(): Promise<string | null> {
-  if (cachedAppUsername !== null) return cachedAppUsername;
-  try {
-    const me = await reddit.getAppUser();
-    // User type exposes `username` (not `name`) per @devvit/reddit/models/User.d.ts
-    cachedAppUsername = me?.username ?? null;
-    return cachedAppUsername;
-  } catch (err) {
-    log("error", "resolve_app_user_failed", serializeErr(err));
-    return null;
-  }
-}
-
-async function isOwnBot(authorName: string | undefined | null): Promise<boolean> {
-  if (!authorName) return false;
-  const me = await appUsername();
-  return me !== null && authorName === me;
 }
 
 function tooOld(createdAtMs: number): boolean {
@@ -124,7 +108,6 @@ async function handleMirrorReply(args: {
 
 interface OnCommentSubmitPayload {
   comment: { id: string; body: string; createdAt: string | number };
-  author: { name: string };
 }
 
 async function handleCommentSubmit(
@@ -140,15 +123,13 @@ async function handleCommentSubmit(
     return;
   }
 
-  const { comment, author } = payload;
+  const { comment } = payload;
 
   if (isDeletedOrRemoved(comment?.body)) return respond(rsp, 200);
   if (tooOld(toEpochMs(comment.createdAt))) return respond(rsp, 200);
 
   const mirrors = missingMirrors(comment.body).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
-
-  if (await isOwnBot(author?.name)) return respond(rsp, 200);
 
   // Trigger payload's comment.id arrives already prefixed (e.g. "t1_abc"),
   // confirmed by smoke test against the live trigger wire format. The .d.ts
@@ -170,7 +151,6 @@ interface OnPostSubmitPayload {
     selftext?: string | null;
     createdAt: string | number;
   };
-  author: { name: string };
 }
 
 async function handlePostSubmit(
@@ -186,7 +166,7 @@ async function handlePostSubmit(
     return;
   }
 
-  const { post, author } = payload;
+  const { post } = payload;
 
   if (isDeletedOrRemoved(post?.selftext)) return respond(rsp, 200);
   if (tooOld(toEpochMs(post.createdAt))) return respond(rsp, 200);
@@ -197,8 +177,6 @@ async function handlePostSubmit(
 
   const mirrors = missingMirrors(scanText).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
-
-  if (await isOwnBot(author?.name)) return respond(rsp, 200);
 
   const rawId = post.id;
   const thingId = rawId.startsWith("t3_")

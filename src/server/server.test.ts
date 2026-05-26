@@ -2,14 +2,12 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { Readable } from 'node:stream';
 
 const submitComment = vi.fn();
-const getAppUser = vi.fn();
 const redisSet = vi.fn();
 const redisDel = vi.fn();
 
 vi.mock('@devvit/web/server', () => ({
   reddit: {
     submitComment: (...a: unknown[]) => submitComment(...a),
-    getAppUser: (...a: unknown[]) => getAppUser(...a),
   },
   redis: {
     set: (...a: unknown[]) => redisSet(...a),
@@ -18,8 +16,6 @@ vi.mock('@devvit/web/server', () => ({
 }));
 
 const { serverOnRequest } = await import('./server.ts');
-
-const BOT = 'xcancel-linker-bot';
 
 interface MockRsp {
   writeHead: (s: number) => void;
@@ -79,16 +75,13 @@ function freshComment(overrides: Record<string, unknown> = {}): Record<string, u
       createdAt: Date.now(),
       ...((overrides.comment as object) ?? {}),
     },
-    author: { name: 'someone-else', ...((overrides.author as object) ?? {}) },
   };
 }
 
 beforeEach(() => {
   submitComment.mockReset();
-  getAppUser.mockReset();
   redisSet.mockReset();
   redisDel.mockReset();
-  getAppUser.mockResolvedValue({ username: BOT });
   redisSet.mockResolvedValue('OK');
   submitComment.mockResolvedValue(undefined);
   // Tests emit JSON log lines on info/warn/error; suppress for readable output.
@@ -142,19 +135,11 @@ describe('comment handler short-circuits', () => {
     expect(redisSet).not.toHaveBeenCalled();
   });
 
-  test('no twitter links → 200, no getAppUser/redis call', async () => {
+  test('no twitter links → 200, no redis/reddit call', async () => {
     const rsp = await postComment(freshComment({ comment: { id: 't1_x', body: 'no links here', createdAt: Date.now() } }));
     expect(rsp.status).toBe(200);
-    expect(getAppUser).not.toHaveBeenCalled();
     expect(redisSet).not.toHaveBeenCalled();
     expect(submitComment).not.toHaveBeenCalled();
-  });
-
-  test('own bot author with links → 200, no submit', async () => {
-    const rsp = await postComment(freshComment({ author: { name: BOT } }));
-    expect(rsp.status).toBe(200);
-    expect(submitComment).not.toHaveBeenCalled();
-    expect(redisSet).not.toHaveBeenCalled();
   });
 });
 
@@ -227,7 +212,6 @@ describe('ID prefixing', () => {
   test('post id without t3_ prefix gets prefixed', async () => {
     await postPost({
       post: { id: 'pid', title: 't', url: 'https://x.com/foo/status/1', selftext: '', createdAt: Date.now() },
-      author: { name: 'someone' },
     });
     expect(redisSet.mock.calls[0]?.[0]).toBe('replied:t3_pid');
     expect(submitComment.mock.calls[0]?.[0]).toMatchObject({ id: 't3_pid' });
@@ -236,7 +220,6 @@ describe('ID prefixing', () => {
   test('post id with t3_ prefix is not double-prefixed', async () => {
     await postPost({
       post: { id: 't3_pid', title: 't', url: 'https://x.com/foo/status/1', selftext: '', createdAt: Date.now() },
-      author: { name: 'someone' },
     });
     expect(redisSet.mock.calls[0]?.[0]).toBe('replied:t3_pid');
   });
@@ -252,7 +235,6 @@ describe('post handler', () => {
         selftext: 'body https://x.com/c/3',
         createdAt: Date.now(),
       },
-      author: { name: 'op' },
     });
     expect(submitComment).toHaveBeenCalledTimes(1);
     const text = submitComment.mock.calls[0]?.[0]?.text as string;
@@ -265,7 +247,6 @@ describe('post handler', () => {
     const links = Array.from({ length: 8 }, (_, i) => `https://x.com/u/${i}`).join(' ');
     await postPost({
       post: { id: 't3_p', title: 't', url: '', selftext: links, createdAt: Date.now() },
-      author: { name: 'op' },
     });
     const text = submitComment.mock.calls[0]?.[0]?.text as string;
     expect(text.split('\n')).toHaveLength(5);
