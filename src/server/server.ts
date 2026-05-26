@@ -157,13 +157,15 @@ async function handleCommentSubmit(
   const mirrors = missingMirrors(comment.body).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
 
-  log("info", "extraction_debug", {
-    thing_id: comment.id,
-    body_len: comment.body.length,
-    raw_matches: rawMatches,
-    deduped_mirrors: mirrors.length,
-    mirrors,
-  });
+  if (rawMatches !== mirrors.length) {
+    // Healthy: rawMatches > mirrors when dedup collapsed duplicates.
+    // Surfaces silently if dedup ever regresses (rawMatches == mirrors == N>2).
+    log("info", "extraction_stats", {
+      thing_id: comment.id,
+      raw_matches: rawMatches,
+      deduped_mirrors: mirrors.length,
+    });
+  }
 
   const items = await buildReplyItems(mirrors);
   const replyText = renderReply(items);
@@ -222,19 +224,13 @@ async function handlePostSubmit(
   const mirrors = missingMirrors(scanText).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
 
-  log("info", "extraction_debug", {
-    thing_id: post.id,
-    url_len: post.url?.length ?? 0,
-    title_len: post.title?.length ?? 0,
-    selftext_len: post.selftext?.length ?? 0,
-    scan_len: scanText.length,
-    raw_matches: rawMatches,
-    deduped_mirrors: mirrors.length,
-    // Log mirror strings so we can see when "deduped" mirrors are actually
-    // distinct strings (e.g. trailing path segments, tracker variance the
-    // current normalizer missed). Public x.com paths only — no user content.
-    mirrors,
-  });
+  if (rawMatches !== mirrors.length) {
+    log("info", "extraction_stats", {
+      thing_id: post.id,
+      raw_matches: rawMatches,
+      deduped_mirrors: mirrors.length,
+    });
+  }
 
   const items = await buildReplyItems(mirrors);
   const replyText = renderReply(items);
