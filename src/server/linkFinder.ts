@@ -25,11 +25,15 @@ export function extractTwitterUrls(text: string): TwitterUrl[] {
 export function missingMirrors(text: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
+  // Case-insensitive haystack so "HTTPS://Xcancel.com/..." counts as present.
+  // Trailing slashes are handled naturally: `includes("…/1")` matches "…/1/".
+  const haystack = text.toLowerCase();
   for (const { path } of extractTwitterUrls(text)) {
     const mirror = `https://xcancel.com/${path}`;
-    if (seen.has(mirror)) continue;
-    if (text.includes(mirror)) continue;
-    seen.add(mirror);
+    const mirrorLc = mirror.toLowerCase();
+    if (seen.has(mirrorLc)) continue;
+    if (haystack.includes(mirrorLc)) continue;
+    seen.add(mirrorLc);
     out.push(mirror);
   }
   return out;

@@ -116,4 +116,20 @@ describe('missingMirrors', () => {
       'https://xcancel.com/foo/status/1?s=20',
     ]);
   });
+
+  test('case-insensitive mirror-already-present detection', () => {
+    const text = 'orig https://x.com/foo/status/1 mirror HTTPS://Xcancel.com/foo/status/1';
+    expect(missingMirrors(text)).toEqual([]);
+  });
+
+  test('trailing slash on existing mirror still counts as present', () => {
+    const text = 'orig https://x.com/foo/status/1 mirror https://xcancel.com/foo/status/1/';
+    expect(missingMirrors(text)).toEqual([]);
+  });
+
+  test('duplicate twitter links differing only in case yield one mirror', () => {
+    expect(missingMirrors('https://x.com/Foo/status/1 https://x.com/foo/status/1')).toEqual([
+      'https://xcancel.com/Foo/status/1',
+    ]);
+  });
 });
