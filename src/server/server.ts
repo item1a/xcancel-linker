@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { reddit, redis } from "@devvit/web/server";
-import { missingMirrors, tweetId } from "./linkFinder.ts";
+import { extractTwitterUrls, missingMirrors, tweetId } from "./linkFinder.ts";
 import { fetchTweet } from "./fxtwitter.ts";
 import { renderReply, type ReplyItem } from "./render.ts";
 import { log, serializeErr } from "./log.ts";
@@ -153,8 +153,16 @@ async function handleCommentSubmit(
   if (isDeletedOrRemoved(comment?.body)) return respond(rsp, 200);
   if (tooOld(toEpochMs(comment.createdAt))) return respond(rsp, 200);
 
+  const rawMatches = extractTwitterUrls(comment.body).length;
   const mirrors = missingMirrors(comment.body).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
+
+  log("info", "extraction_debug", {
+    thing_id: comment.id,
+    body_len: comment.body.length,
+    raw_matches: rawMatches,
+    deduped_mirrors: mirrors.length,
+  });
 
   const items = await buildReplyItems(mirrors);
   const replyText = renderReply(items);
@@ -209,8 +217,19 @@ async function handlePostSubmit(
     .filter((s): s is string => typeof s === "string" && s.length > 0)
     .join("\n");
 
+  const rawMatches = extractTwitterUrls(scanText).length;
   const mirrors = missingMirrors(scanText).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
+
+  log("info", "extraction_debug", {
+    thing_id: post.id,
+    url_len: post.url?.length ?? 0,
+    title_len: post.title?.length ?? 0,
+    selftext_len: post.selftext?.length ?? 0,
+    scan_len: scanText.length,
+    raw_matches: rawMatches,
+    deduped_mirrors: mirrors.length,
+  });
 
   const items = await buildReplyItems(mirrors);
   const replyText = renderReply(items);
