@@ -4,6 +4,10 @@ import { missingMirrors } from "./linkFinder.ts";
 
 const MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
 const DEDUP_TTL_S = 7 * 24 * 60 * 60; // 7 days
+// Cap the per-reply mirror count so a link-heavy post can't make us produce a
+// wall-of-URLs comment. First N is fine in practice; remaining links rarely
+// matter and would just degrade the signal-to-noise ratio of our reply.
+const MAX_MIRRORS_PER_REPLY = 5;
 
 export async function serverOnRequest(
   req: IncomingMessage,
@@ -143,7 +147,7 @@ async function handleCommentSubmit(
   if (isDeletedOrRemoved(comment?.body)) return respond(rsp, 200);
   if (tooOld(toEpochMs(comment.createdAt))) return respond(rsp, 200);
 
-  const mirrors = missingMirrors(comment.body);
+  const mirrors = missingMirrors(comment.body).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
 
   if (await isOwnBot(author?.name)) return respond(rsp, 200);
@@ -193,7 +197,7 @@ async function handlePostSubmit(
     .filter((s): s is string => typeof s === "string" && s.length > 0)
     .join("\n");
 
-  const mirrors = missingMirrors(scanText);
+  const mirrors = missingMirrors(scanText).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
 
   if (await isOwnBot(author?.name)) return respond(rsp, 200);
