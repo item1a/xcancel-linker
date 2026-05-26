@@ -39,9 +39,9 @@ Two Redis key shapes, both scoped to the installation:
 
 No user content, no analytics. The only outbound network call is to
 `api.fxtwitter.com` to fetch public tweet metadata. See
-[PRIVACY.md](PRIVACY.md).
+[PRIVACY.md](https://github.com/item1a/xcancel-linker/blob/master/PRIVACY.md).
 
 ## Terms / Privacy
 
-- [Terms of Service](TERMS.md)
-- [Privacy Policy](PRIVACY.md)
+- [Terms of Service](https://github.com/item1a/xcancel-linker/blob/master/TERMS.md)
+- [Privacy Policy](https://github.com/item1a/xcancel-linker/blob/master/PRIVACY.md)
