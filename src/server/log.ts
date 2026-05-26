@@ -3,7 +3,7 @@
 // parse them mechanically. Skip-paths (deleted body, too old, no links) are
 // intentionally not logged — they're the common case and would just be noise.
 
-type LogLevel = "info" | "warn" | "error";
+type LogLevel = "debug" | "info" | "warn" | "error";
 
 export function serializeErr(err: unknown): Record<string, unknown> {
   if (err instanceof Error) {

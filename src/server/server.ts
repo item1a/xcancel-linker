@@ -144,7 +144,7 @@ async function handleSubmitTrigger(
   if (rawCount !== matches.length) {
     // Healthy: rawCount > matches.length when dedup collapsed duplicates.
     // Surfaces a regression silently if dedup ever stops collapsing them.
-    log("info", "extraction_stats", {
+    log("debug", "extraction_stats", {
       thing_id: rawId,
       raw_matches: rawCount,
       deduped_mirrors: matches.length,
