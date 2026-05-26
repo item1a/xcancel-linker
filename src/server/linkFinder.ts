@@ -3,6 +3,16 @@ export interface TwitterUrl {
   path: string;
 }
 
+const TWEET_ID_RE = /^[^/]+\/status\/(\d+)/i;
+
+// Extract the numeric tweet id from a TwitterUrl path like 'user/status/123…'.
+// Returns null for non-status URLs (profile links, hashtag pages, etc.) and
+// for paths whose post-status segment isn't an integer (a defensive guard).
+export function tweetId(path: string): string | null {
+  const m = TWEET_ID_RE.exec(path);
+  return m?.[1] ?? null;
+}
+
 const HOST_RE =
   /(https?:\/\/(?:x\.com|twitter\.com|mobile\.twitter\.com)\/[^\s)\]]+)/gi;
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { extractTwitterUrls, missingMirrors } from './linkFinder.ts';
+import { extractTwitterUrls, missingMirrors, tweetId } from './linkFinder.ts';
 
 describe('extractTwitterUrls', () => {
   test('single x.com link', () => {
@@ -162,5 +162,33 @@ describe('missingMirrors', () => {
   test('fixer for a different tweet does not suppress', () => {
     const text = 'https://x.com/foo/status/1 https://fxtwitter.com/bar/status/2';
     expect(missingMirrors(text)).toEqual(['https://xcancel.com/foo/status/1']);
+  });
+});
+
+describe('tweetId', () => {
+  test('extracts numeric id from status path', () => {
+    expect(tweetId('user/status/1234567890')).toBe('1234567890');
+  });
+
+  test('ignores query string', () => {
+    expect(tweetId('user/status/1234?s=20&t=abc')).toBe('1234');
+  });
+
+  test('ignores trailing photo segment', () => {
+    expect(tweetId('user/status/1234/photo/1')).toBe('1234');
+  });
+
+  test('ignores trailing slash', () => {
+    expect(tweetId('user/status/1234/')).toBe('1234');
+  });
+
+  test('returns null for non-status path', () => {
+    expect(tweetId('user')).toBeNull();
+    expect(tweetId('user/likes')).toBeNull();
+    expect(tweetId('hashtag/foo')).toBeNull();
+  });
+
+  test('returns null for non-numeric id', () => {
+    expect(tweetId('user/status/abc')).toBeNull();
   });
 });
