@@ -1,7 +1,26 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { reddit, redis } from "@devvit/web/server";
-import { missingMirrors } from "./linkFinder.ts";
+import { missingMirrors, tweetId } from "./linkFinder.ts";
+import { fetchTweet } from "./fxtwitter.ts";
+import { renderReply, type ReplyItem } from "./render.ts";
 import { log, serializeErr } from "./log.ts";
+
+const XCANCEL_PREFIX = "https://xcancel.com/";
+
+// Fetch tweet metadata for each mirror in parallel; fail-open per item so a
+// single fetch error doesn't degrade the rest of the reply.
+async function buildReplyItems(mirrorUrls: string[]): Promise<ReplyItem[]> {
+  return Promise.all(
+    mirrorUrls.map(async (mirrorUrl) => {
+      const path = mirrorUrl.startsWith(XCANCEL_PREFIX)
+        ? mirrorUrl.slice(XCANCEL_PREFIX.length)
+        : "";
+      const id = tweetId(path);
+      if (!id) return { mirrorUrl, tweet: null };
+      return { mirrorUrl, tweet: await fetchTweet(id) };
+    }),
+  );
+}
 
 // Self-recursion note: we intentionally don't check author == app bot. Our
 // reply contains only xcancel.com URLs (HOST_RE doesn't match those), so
@@ -56,9 +75,11 @@ function tooOld(createdAtMs: number): boolean {
 
 async function handleMirrorReply(args: {
   thingId: `t1_${string}` | `t3_${string}`;
-  mirrors: string[];
+  replyText: string;
+  enriched: number;
+  total: number;
 }): Promise<200 | 500> {
-  const { thingId, mirrors } = args;
+  const { thingId, replyText, enriched, total } = args;
 
   const dedupKey = `replied:${thingId}`;
 
@@ -91,7 +112,7 @@ async function handleMirrorReply(args: {
   // path. The 1-hour tooOld filter bounds wasted retries on truly permanent
   // failures (locked thread, banned sub).
   try {
-    await reddit.submitComment({ id: thingId, text: mirrors.join("\n") });
+    await reddit.submitComment({ id: thingId, text: replyText });
   } catch (err) {
     try {
       await redis.del(dedupKey);
@@ -102,7 +123,11 @@ async function handleMirrorReply(args: {
     return 500;
   }
 
-  log("info", "reply_posted", { thing_id: thingId, n_mirrors: mirrors.length });
+  log("info", "reply_posted", {
+    thing_id: thingId,
+    n_mirrors: total,
+    n_enriched: enriched,
+  });
   return 200;
 }
 
@@ -131,6 +156,10 @@ async function handleCommentSubmit(
   const mirrors = missingMirrors(comment.body).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
 
+  const items = await buildReplyItems(mirrors);
+  const replyText = renderReply(items);
+  const enriched = items.filter((it) => it.tweet !== null).length;
+
   // Trigger payload's comment.id arrives already prefixed (e.g. "t1_abc"),
   // confirmed by smoke test against the live trigger wire format. The .d.ts
   // type `string` does not encode this. Guard against double-prefixing.
@@ -139,7 +168,12 @@ async function handleCommentSubmit(
     ? (rawId as `t1_${string}`)
     : (`t1_${rawId}` as const);
 
-  const status = await handleMirrorReply({ thingId, mirrors });
+  const status = await handleMirrorReply({
+    thingId,
+    replyText,
+    enriched,
+    total: items.length,
+  });
   respond(rsp, status);
 }
 
@@ -178,12 +212,21 @@ async function handlePostSubmit(
   const mirrors = missingMirrors(scanText).slice(0, MAX_MIRRORS_PER_REPLY);
   if (mirrors.length === 0) return respond(rsp, 200);
 
+  const items = await buildReplyItems(mirrors);
+  const replyText = renderReply(items);
+  const enriched = items.filter((it) => it.tweet !== null).length;
+
   const rawId = post.id;
   const thingId = rawId.startsWith("t3_")
     ? (rawId as `t3_${string}`)
     : (`t3_${rawId}` as const);
 
-  const status = await handleMirrorReply({ thingId, mirrors });
+  const status = await handleMirrorReply({
+    thingId,
+    replyText,
+    enriched,
+    total: items.length,
+  });
   respond(rsp, status);
 }
 

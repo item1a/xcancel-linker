@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Readable } from 'node:stream';
 
 const submitComment = vi.fn();
+const redisGet = vi.fn();
 const redisSet = vi.fn();
 const redisDel = vi.fn();
 
@@ -10,12 +11,15 @@ vi.mock('@devvit/web/server', () => ({
     submitComment: (...a: unknown[]) => submitComment(...a),
   },
   redis: {
+    get: (...a: unknown[]) => redisGet(...a),
     set: (...a: unknown[]) => redisSet(...a),
     del: (...a: unknown[]) => redisDel(...a),
   },
 }));
 
 const { serverOnRequest } = await import('./server.ts');
+
+const originalFetch = globalThis.fetch;
 
 interface MockRsp {
   writeHead: (s: number) => void;
@@ -80,14 +84,25 @@ function freshComment(overrides: Record<string, unknown> = {}): Record<string, u
 
 beforeEach(() => {
   submitComment.mockReset();
+  redisGet.mockReset();
   redisSet.mockReset();
   redisDel.mockReset();
+  redisGet.mockResolvedValue(undefined);
   redisSet.mockResolvedValue('OK');
   submitComment.mockResolvedValue(undefined);
+  // Default: tweet enrichment fetches fail, so replies render as mirror-only.
+  // Tests that care about enrichment override this stub.
+  globalThis.fetch = vi.fn(async () => {
+    throw new Error('fetch not stubbed in this test');
+  }) as unknown as typeof fetch;
   // Tests emit JSON log lines on info/warn/error; suppress for readable output.
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 describe('routing', () => {
@@ -225,6 +240,73 @@ describe('ID prefixing', () => {
   });
 });
 
+describe('tweet enrichment', () => {
+  test('happy path: reply text includes quoted author + tweet text + mirror', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({
+        code: 200,
+        status: {
+          type: 'status',
+          text: 'hello world',
+          author: { screen_name: 'jack' },
+        },
+      }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    ) as unknown as typeof fetch;
+
+    await postComment(freshComment());
+    const text = submitComment.mock.calls[0]?.[0]?.text as string;
+    expect(text).toBe('> **@jack**: hello world\nhttps://xcancel.com/foo/status/1');
+  });
+
+  test('fetch failure: falls back to mirror-only reply', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error('upstream down');
+    }) as unknown as typeof fetch;
+
+    await postComment(freshComment());
+    const text = submitComment.mock.calls[0]?.[0]?.text as string;
+    expect(text).toBe('https://xcancel.com/foo/status/1');
+  });
+
+  test('cache hit short-circuits fetch', async () => {
+    redisGet.mockResolvedValueOnce(JSON.stringify({
+      id: '1',
+      authorScreenName: 'cached',
+      text: 'from cache',
+      sensitive: false,
+      media: 'none',
+    }));
+    const f = vi.fn();
+    globalThis.fetch = f as unknown as typeof fetch;
+
+    await postComment(freshComment());
+    expect(f).not.toHaveBeenCalled();
+    const text = submitComment.mock.calls[0]?.[0]?.text as string;
+    expect(text).toContain('cached');
+    expect(text).toContain('from cache');
+  });
+
+  test('sensitive tweet: text suppressed', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({
+        code: 200,
+        status: {
+          type: 'status',
+          text: 'graphic content',
+          possibly_sensitive: true,
+          author: { screen_name: 'nsfw_user' },
+        },
+      }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    ) as unknown as typeof fetch;
+
+    await postComment(freshComment());
+    const text = submitComment.mock.calls[0]?.[0]?.text as string;
+    expect(text).toContain('@nsfw_user');
+    expect(text).toContain('https://xcancel.com/foo/status/1');
+    expect(text).not.toContain('graphic content');
+  });
+});
+
 describe('post handler', () => {
   test('scans url, title, and selftext together', async () => {
     await postPost({
@@ -249,6 +331,9 @@ describe('post handler', () => {
       post: { id: 't3_p', title: 't', url: '', selftext: links, createdAt: Date.now() },
     });
     const text = submitComment.mock.calls[0]?.[0]?.text as string;
-    expect(text.split('\n')).toHaveLength(5);
+    // Count xcancel mirror occurrences; render layout (line separators) is
+    // checked separately in render.test.ts.
+    const mirrorCount = (text.match(/https:\/\/xcancel\.com\//g) ?? []).length;
+    expect(mirrorCount).toBe(5);
   });
 });
