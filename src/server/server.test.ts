@@ -255,7 +255,7 @@ describe('tweet enrichment', () => {
 
     await postComment(freshComment());
     const text = submitComment.mock.calls[0]?.[0]?.text as string;
-    expect(text).toBe('> **@jack**: hello world\nhttps://xcancel.com/foo/status/1');
+    expect(text).toBe('**@jack**: hello world\nhttps://xcancel.com/foo/status/1');
   });
 
   test('fetch failure: falls back to mirror-only reply', async () => {

@@ -13,14 +13,14 @@ const baseTweet: Tweet = {
 const mirror = 'https://xcancel.com/jack/status/1';
 
 describe('renderReply', () => {
-  test('enriched tweet: quoted text + mirror on next line', () => {
+  test('enriched tweet: author + text + mirror on next line', () => {
     const out = renderReply([{ mirrorUrl: mirror, tweet: baseTweet }]);
-    expect(out).toBe(`> **@jack**: hello world\n${mirror}`);
+    expect(out).toBe(`**@jack**: hello world\n${mirror}`);
   });
 
   test('tweet with photo: media tag appended', () => {
     const out = renderReply([{ mirrorUrl: mirror, tweet: { ...baseTweet, media: 'photo' } }]);
-    expect(out).toBe(`> **@jack**: hello world [photo]\n${mirror}`);
+    expect(out).toBe(`**@jack**: hello world [photo]\n${mirror}`);
   });
 
   test('tweet with video: media tag', () => {
@@ -42,9 +42,9 @@ describe('renderReply', () => {
     expect(out).not.toContain('nsfw');
   });
 
-  test('tweet with empty text: no quote line, just author', () => {
+  test('tweet with empty text: author + media only', () => {
     const out = renderReply([{ mirrorUrl: mirror, tweet: { ...baseTweet, text: '', media: 'photo' } }]);
-    expect(out).toBe(`> **@jack** [photo]\n${mirror}`);
+    expect(out).toBe(`**@jack** [photo]\n${mirror}`);
   });
 
   test('multi-line tweet text is flattened', () => {
@@ -52,7 +52,7 @@ describe('renderReply', () => {
       mirrorUrl: mirror,
       tweet: { ...baseTweet, text: 'line one\nline two\n\nline three' },
     }]);
-    expect(out).toBe(`> **@jack**: line one line two line three\n${mirror}`);
+    expect(out).toBe(`**@jack**: line one line two line three\n${mirror}`);
   });
 
   test('long text is truncated with ellipsis', () => {
@@ -76,9 +76,9 @@ describe('renderReply', () => {
     ];
     const out = renderReply(items);
     expect(out).toBe(
-      '> **@a**: first\nhttps://xcancel.com/a/1\n\n' +
+      '**@a**: first\nhttps://xcancel.com/a/1\n\n' +
       'https://xcancel.com/b/2\n\n' +
-      '> **@c**: third\nhttps://xcancel.com/c/3',
+      '**@c**: third\nhttps://xcancel.com/c/3',
     );
   });
 });

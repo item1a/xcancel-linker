@@ -34,10 +34,11 @@ function renderItem(item: ReplyItem): string {
   }
   const text = truncate(tweet.text);
   const tag = mediaTag(tweet.media);
-  // Reddit markdown: `>` opens a blockquote on the same line.
+  // No blockquote: the bold @author already signals "from a tweet," and a
+  // bare line keeps the same left margin as the mirror URL below it.
   const head = text
-    ? `> **@${tweet.authorScreenName}**: ${text}${tag}`
-    : `> **@${tweet.authorScreenName}**${tag}`;
+    ? `**@${tweet.authorScreenName}**: ${text}${tag}`
+    : `**@${tweet.authorScreenName}**${tag}`;
   return `${head}\n${mirrorUrl}`;
 }
 
