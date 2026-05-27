@@ -58,6 +58,15 @@ No user content, no analytics. The only outbound network call is to
 `api.fxtwitter.com` to fetch public tweet metadata. See
 [PRIVACY.md](https://github.com/item1a/xcancel-linker/blob/master/PRIVACY.md).
 
+## Fetch Domains
+
+The following domains are requested for this app:
+
+- `api.fxtwitter.com` - Used to fetch public tweet metadata (author
+  handle, tweet text, and attached media type) for the reply preview.
+  Results are cached in Redis for 24 hours, and any fetch failure falls
+  back to posting the bare `xcancel.com` mirror URL.
+
 ## Changelog
 
 Dates are the release date of each major update. Versions before the
