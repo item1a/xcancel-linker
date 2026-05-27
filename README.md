@@ -82,7 +82,7 @@ first App Directory listing are grouped by the feature they shipped.
 ### Tweet previews — 2026-05-25
 
 - Replies now enrich each mirror with a preview: author handle, tweet
-  text (truncated at 280 chars), and a media tag (`[photo]` /
+  text (truncated at 140 chars), and a media tag (`[photo]` /
   `[video]` / `[gif]`).
 - Metadata is fetched on demand from `api.fxtwitter.com` and cached in
   Redis for 24 hours. Sensitive tweets are linked without their text,

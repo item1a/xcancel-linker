@@ -7,7 +7,7 @@ export interface ReplyItem {
   tweet: Tweet | null;
 }
 
-const TEXT_MAX = 280;
+const TEXT_MAX = 140;
 const ELLIPSIS = "…";
 
 function mediaTag(media: Tweet["media"]): string {
